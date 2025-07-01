@@ -1,0 +1,2 @@
+# daily-api-mailer
+send email out with info for api
