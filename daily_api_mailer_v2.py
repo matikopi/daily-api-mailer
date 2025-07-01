@@ -10,11 +10,11 @@ from email.message import EmailMessage
 import pandas as pd
 
 # Gmail SMTP settings - set as environment variables
-SMTP_USER = os.getenv('SENDER_EMAIL', 'your_gmail@gmail.com')
+SMTP_USER = os.getenv('SENDER_EMAIL', 'matikopi@gmail.com')
 SMTP_PASS = os.getenv('GMAIL_APP_PASSWORD', 'your_app_password_here')
 
 # Recipients can be multiple emails separated by commas
-RECIPIENT_EMAILS_STR = os.getenv('RECIPIENT_EMAILS', 'matikopi@gmail.com')
+RECIPIENT_EMAILS_STR = os.getenv('RECIPIENT_EMAILS', 'gina@ginaenergy.com')
 RECIPIENT_EMAILS = [email.strip() for email in RECIPIENT_EMAILS_STR.split(',') if email.strip()]
 
 # Print recipient configuration at startup
