@@ -11,8 +11,8 @@ import pandas as pd
 # Initialize HTTP pool manager
 http = urllib3.PoolManager()
 
-# SendGrid API Key - consider moving to environment variable
-SENDGRID_API_KEY = "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"
+# SendGrid API Key - set as environment variable or replace with your key
+SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', 'YOUR_SENDGRID_API_KEY_HERE')
 RECIPIENT_EMAIL = "matikopi@gmail.com"
 
 def run_api_scripts():
