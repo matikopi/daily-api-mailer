@@ -19,7 +19,7 @@ jobs:
           python-version: "3.13"
 
       - name: Run email script
-        run: python send_email.py
+        run: python daily_api_mailer_v2.py
         env:
           SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
           RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
