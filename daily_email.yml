@@ -1,0 +1,26 @@
+name: Daily Email Sender
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # Runs every day at 6:00 UTC
+  workflow_dispatch:      # Also allows manual run
+
+jobs:
+  send_email:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Run email script
+        run: python send_email.py
+        env:
+          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
