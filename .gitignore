@@ -1,8 +1,9 @@
 # Environment variables
 .env
 
-# Excel temporary files
+# Excel files
 ~$*.xlsx
+*.xlsx
 
 # Python cache
 __pycache__/

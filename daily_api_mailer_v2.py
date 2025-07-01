@@ -4,16 +4,25 @@ import os
 import subprocess
 import time
 import sys
+import smtplib
 from datetime import datetime, timedelta
-import urllib3
+from email.message import EmailMessage
 import pandas as pd
 
-# Initialize HTTP pool manager
-http = urllib3.PoolManager()
+# Gmail SMTP settings - set as environment variables
+SMTP_USER = os.getenv('SENDER_EMAIL', 'your_gmail@gmail.com')
+SMTP_PASS = os.getenv('GMAIL_APP_PASSWORD', 'your_app_password_here')
 
-# SendGrid API Key - set as environment variable or replace with your key
-SENDGRID_API_KEY = os.getenv('SENDGRID_API_KEY', 'YOUR_SENDGRID_API_KEY_HERE')
-RECIPIENT_EMAIL = "matikopi@gmail.com"
+# Recipients can be multiple emails separated by commas
+RECIPIENT_EMAILS_STR = os.getenv('RECIPIENT_EMAILS', 'matikopi@gmail.com')
+RECIPIENT_EMAILS = [email.strip() for email in RECIPIENT_EMAILS_STR.split(',') if email.strip()]
+
+# Print recipient configuration at startup
+def print_email_config():
+    """Print the current email configuration."""
+    print(f"Sender: {SMTP_USER}")
+    print(f"Recipients ({len(RECIPIENT_EMAILS)}): {', '.join(RECIPIENT_EMAILS)}")
+    print()
 
 def run_api_scripts():
     """Run all API fetch scripts and wait for completion."""
@@ -53,9 +62,9 @@ def create_daily_summary_excel():
     """Create a single Excel file with yesterday's data from all 4 APIs in separate tabs."""
     current_date = datetime.now()
     yesterday = current_date - timedelta(days=1)
-    yesterday_str = yesterday.strftime('%d-%m-%Y')
+    yesterday_str = yesterday.strftime('%Y-%m-%d')
     
-    output_filename = f"noga_daily_report_{current_date.strftime('%Y-%m-%d')}.xlsx"
+    output_filename = f"NOGA Daily Report {yesterday_str}.xlsx"
     
     excel_files = [
         ('production_mix.xlsx', 'Production Mix'),
@@ -98,20 +107,11 @@ def create_daily_summary_excel():
         print(f"✗ Error creating summary Excel: {str(e)}")
         return None
 
-def encode_file_to_base64(file_path):
-    """Read Excel file and encode to base64."""
-    try:
-        with open(file_path, 'rb') as file:
-            file_content = file.read()
-            encoded_content = base64.b64encode(file_content).decode('utf-8')
-            return encoded_content
-    except Exception as e:
-        print(f"Error encoding {file_path}: {str(e)}")
-        return None
-
 def send_daily_summary(summary_filename):
-    """Send the daily summary Excel file via email."""
+    """Send the daily summary Excel file via Gmail SMTP."""
     current_date = datetime.now()
+    yesterday = current_date - timedelta(days=1)
+    yesterday_str = yesterday.strftime('%Y-%m-%d')
     
     if not os.path.exists(summary_filename):
         print(f"✗ Summary file not found: {summary_filename}")
@@ -119,82 +119,61 @@ def send_daily_summary(summary_filename):
     
     file_size = os.path.getsize(summary_filename) / (1024 * 1024)  # MB
     
-    encoded_content = encode_file_to_base64(summary_filename)
-    if not encoded_content:
-        print(f"✗ Failed to encode {summary_filename}")
+    # Create email message
+    msg = EmailMessage()
+    msg["Subject"] = f"NOGA Daily Report {yesterday_str}"
+    msg["From"] = SMTP_USER
+    msg["To"] = ', '.join(RECIPIENT_EMAILS)
+    
+    # Email body
+    generate_str = current_date.strftime('%B %-d, %Y at %H:%M') if os.name != 'nt' else current_date.strftime('%B %d, %Y at %H:%M').lstrip('0')
+    email_body = f"""NOGA Israel - Daily Electricity Market Report
+
+Generated on: {generate_str}
+
+Attached is the daily electricity market data from Israel's Independent System Operator (Noga ISO), covering the previous day's activity (report for {yesterday_str}). The Excel file includes the following tabs:
+
+• Production Mix – Energy generation by source (5-minute intervals)
+• CO₂ Emissions – Carbon dioxide emissions (5-minute intervals)
+• Demand – Electricity demand forecasts (30-minute intervals)
+• SMP Pricing – System Marginal Prices (constrained & unconstrained, 30-minute intervals)
+
+Please let me know if you'd like to adjust the format or add other data points in future reports."""
+    
+    # Append signature
+    email_body += "\n\nThanks,\nMaitas Kopinsky"
+    
+    msg.set_content(email_body)
+    
+    # Attach the Excel file
+    try:
+        with open(summary_filename, 'rb') as f:
+            file_data = f.read()
+            msg.add_attachment(file_data, 
+                             maintype='application', 
+                             subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             filename=summary_filename)
+    except Exception as e:
+        print(f"✗ Error attaching file: {str(e)}")
         return False
     
-    # Create email content
-    email_body = f"""Noga ISO Daily Data Report
-
-Generated on: {current_date.strftime('%Y-%m-%d %H:%M:%S')}
-
-This email contains yesterday's electricity market data from Israel's Independent System Operator (Noga ISO) in a single Excel file with 4 tabs:
-
-• Production Mix: Energy generation by source (5-minute intervals)
-• CO2 Emissions: Carbon dioxide emissions data (5-minute intervals)  
-• Demand: Electricity demand forecasts (30-minute intervals)
-• SMP Pricing: System Marginal Pricing - constrained & unconstrained (30-minute intervals)
-
-File size: {file_size:.1f} MB
-Data source: Noga ISO APIs (https://apim-api.noga-iso.co.il/)
-
-Note: This contains only yesterday's data. To receive historical data files, 
-run the script with --historical flag.
-"""
-
-    # SendGrid email payload
-    payload = {
-        "personalizations": [
-            {
-                "to": [{"email": RECIPIENT_EMAIL}]
-            }
-        ],
-        "from": {"email": RECIPIENT_EMAIL},
-        "subject": f"Noga ISO Daily Report - {current_date.strftime('%Y-%m-%d')}",
-        "content": [{
-            "type": "text/plain",
-            "value": email_body
-        }],
-        "attachments": [{
-            "content": encoded_content,
-            "filename": summary_filename,
-            "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "disposition": "attachment"
-        }]
-    }
-    
-    # Send email via SendGrid
-    url = "https://api.sendgrid.com/v3/mail/send"
-    
+    # Send email via Gmail SMTP
     try:
-        print(f"Sending daily summary ({file_size:.1f} MB)...")
-        encoded_data = json.dumps(payload).encode('utf-8')
+        print(f"Sending daily summary ({file_size:.1f} MB) via Gmail...")
         
-        response = http.request(
-            'POST',
-            url,
-            body=encoded_data,
-            headers={
-                'Authorization': f'Bearer {SENDGRID_API_KEY}',
-                'Content-Type': 'application/json'
-            }
-        )
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
         
-        if response.status == 202:
-            print(f"✓ Daily summary sent successfully to {RECIPIENT_EMAIL}!")
-            return True
-        else:
-            print(f"✗ SendGrid error {response.status} for daily summary")
-            print(f"Response: {response.data.decode()}")
-            return False
-            
+        print(f"✓ Daily summary sent successfully to {', '.join(RECIPIENT_EMAILS)}!")
+        return True
+        
     except Exception as e:
-        print(f"✗ Error sending daily summary: {str(e)}")
+        print(f"✗ Error sending email: {str(e)}")
         return False
 
 def send_historical_file(filename, description, file_number, total_files):
-    """Send a single historical Excel file via email."""
+    """Send a single historical Excel file via Gmail SMTP."""
     current_date = datetime.now()
     
     if not os.path.exists(filename):
@@ -203,12 +182,13 @@ def send_historical_file(filename, description, file_number, total_files):
     
     file_size = os.path.getsize(filename) / (1024 * 1024)  # MB
     
-    encoded_content = encode_file_to_base64(filename)
-    if not encoded_content:
-        print(f"✗ Failed to encode {filename}")
-        return False
+    # Create email message
+    msg = EmailMessage()
+    msg["Subject"] = f"Noga ISO Historical - {description} - {current_date.strftime('%Y-%m-%d')}"
+    msg["From"] = SMTP_USER
+    msg["To"] = ', '.join(RECIPIENT_EMAILS)
     
-    # Create email content
+    # Email body
     email_body = f"""Noga ISO Historical Data - Part {file_number} of {total_files}
 
 Generated on: {current_date.strftime('%Y-%m-%d %H:%M:%S')}
@@ -222,53 +202,35 @@ Source: https://apim-api.noga-iso.co.il/
 This file contains complete historical data from the earliest available date.
 This is part {file_number} of {total_files} historical data emails.
 """
-
-    # SendGrid email payload
-    payload = {
-        "personalizations": [
-            {
-                "to": [{"email": RECIPIENT_EMAIL}]
-            }
-        ],
-        "from": {"email": RECIPIENT_EMAIL},
-        "subject": f"Noga ISO Historical - {description} - {current_date.strftime('%Y-%m-%d')}",
-        "content": [{
-            "type": "text/plain",
-            "value": email_body
-        }],
-        "attachments": [{
-            "content": encoded_content,
-            "filename": filename,
-            "type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "disposition": "attachment"
-        }]
-    }
     
-    # Send email via SendGrid
-    url = "https://api.sendgrid.com/v3/mail/send"
+    # Append signature
+    email_body += "\n\nThanks,\nMaitas Kopinsky"
     
+    msg.set_content(email_body)
+    
+    # Attach the Excel file
     try:
-        print(f"Sending {filename} ({file_size:.1f} MB)...")
-        encoded_data = json.dumps(payload).encode('utf-8')
+        with open(filename, 'rb') as f:
+            file_data = f.read()
+            msg.add_attachment(file_data, 
+                             maintype='application', 
+                             subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             filename=filename)
+    except Exception as e:
+        print(f"✗ Error attaching {filename}: {str(e)}")
+        return False
+    
+    # Send email via Gmail SMTP
+    try:
+        print(f"Sending {filename} ({file_size:.1f} MB) via Gmail...")
         
-        response = http.request(
-            'POST',
-            url,
-            body=encoded_data,
-            headers={
-                'Authorization': f'Bearer {SENDGRID_API_KEY}',
-                'Content-Type': 'application/json'
-            }
-        )
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
+            smtp.login(SMTP_USER, SMTP_PASS)
+            smtp.send_message(msg)
         
-        if response.status == 202:
-            print(f"✓ {filename} sent successfully!")
-            return True
-        else:
-            print(f"✗ SendGrid error {response.status} for {filename}")
-            print(f"Response: {response.data.decode()}")
-            return False
-            
+        print(f"✓ {filename} sent successfully!")
+        return True
+        
     except Exception as e:
         print(f"✗ Error sending {filename}: {str(e)}")
         return False
@@ -308,7 +270,7 @@ def send_historical_files():
 def main():
     """Main function with options for daily or historical data."""
     print("=" * 60)
-    print("NOGA ISO API MAILER V2")
+    print("NOGA ISO API MAILER V2 (Gmail SMTP)")
     print("=" * 60)
     
     # Check for command line arguments
@@ -354,6 +316,10 @@ def main():
     
     print(f"Total runtime: {duration}")
     print(f"Completed at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print("\nRequired environment variables:")
+    print("  SENDER_EMAIL=your_gmail@gmail.com")
+    print("  GMAIL_APP_PASSWORD=your_16_char_app_password")
+    print("  RECIPIENT_EMAILS=recipient1@email.com,recipient2@email.com")
     print("\nUsage examples:")
     print("  py daily_api_mailer_v2.py                    # Daily summary only")
     print("  py daily_api_mailer_v2.py --historical       # Daily + historical")
@@ -361,4 +327,5 @@ def main():
     print("=" * 60)
 
 if __name__ == "__main__":
+    print_email_config()
     main() 

@@ -84,6 +84,39 @@ Each script will create an Excel file with two sheets:
 - `demand_data.xlsx`
 - `smp_data.xlsx`
 
+## Email Configuration (daily_api_mailer_v2.py)
+
+For sending automated email reports, set these environment variables:
+
+```bash
+# Gmail SMTP Configuration
+set SENDER_EMAIL=your_gmail@gmail.com
+set GMAIL_APP_PASSWORD=your_16_char_app_password
+
+# Multiple recipients (comma-separated, no spaces needed)
+set RECIPIENT_EMAILS=email1@company.com,email2@company.com,email3@company.com
+
+# Single recipient example:
+set RECIPIENT_EMAILS=matikopi@gmail.com
+```
+
+**Gmail Setup Requirements:**
+1. Enable 2-Factor Authentication on your Gmail account
+2. Generate a 16-character App Password (not your regular password)
+3. Use the App Password in `GMAIL_APP_PASSWORD`
+
+**Usage Examples:**
+```bash
+# Send daily summary only
+py daily_api_mailer_v2.py
+
+# Send daily summary + historical files
+py daily_api_mailer_v2.py --historical
+
+# Use existing files (skip API fetch)
+py daily_api_mailer_v2.py --skip-fetch
+```
+
 ## Configuration
 
 The scripts automatically try both API endpoints:
