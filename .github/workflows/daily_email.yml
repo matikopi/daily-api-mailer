@@ -18,6 +18,9 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
       - name: Run email script
         run: python daily_api_mailer_v2.py
         env:
